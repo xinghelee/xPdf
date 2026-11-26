@@ -153,6 +153,9 @@ final class ViewerModel {
     var hasForm = false
     var showsFormBanner = true
     var isShowingOCR = false
+    var isShowingCompress = false
+    /// Where the document lives, if it has been saved.
+    var fileURL: URL?
     /// No page among the first few has a text layer: probably a scan.
     var looksScanned = false
     var showsScanBanner = true
@@ -705,11 +708,22 @@ final class ViewerModel {
         checkFormChanges(name: "清除表单")
     }
 
+    // MARK: - Compression
+
+    /// The document as it would be saved now, including unsaved edits.
+    func currentDocumentData() -> Data? {
+        commitFormEditing()
+        return pdf.dataRepresentation()
+    }
+
     // MARK: - OCR
 
     struct OCRResult {
         var recognizedPages = 0
-        var skippedPages = 0
+        /// Already had text; rebuilding them could damage that text, so they are always skipped.
+        var pagesWithText = 0
+        /// Bookmarks or links point to them; skipped unless the user opted in.
+        var linkedPagesSkipped = 0
         var lineCount = 0
         var text = ""
         var cancelled = false
@@ -718,10 +732,15 @@ final class ViewerModel {
     /// Recognizes text on `targets` and replaces them with copies that carry an invisible text layer.
     /// The whole run is one undo step. Cancelling keeps the pages finished so far.
     @MainActor
-    func recognizeText(in targets: [PDFPage], language: OCRLanguage, skipPagesWithText: Bool,
+    func recognizeText(in targets: [PDFPage], language: OCRLanguage, includeLinkedPages: Bool,
                        progress: @escaping (Int, Int) -> Void) async -> OCRResult {
-        let todo = skipPagesWithText ? targets.filter { !hasText($0) } : targets
-        var result = OCRResult(skippedPages: targets.count - todo.count)
+        // Pages with text are never rebuilt: redrawing a page re-embeds its fonts, and for many
+        // fonts the text then no longer extracts correctly.
+        let withoutText = targets.filter { !hasText($0) }
+        let referenced = PageReferences.referencedPages(in: pdf)
+        let todo = includeLinkedPages ? withoutText : withoutText.filter { !referenced.contains(ObjectIdentifier($0)) }
+        var result = OCRResult(pagesWithText: targets.count - withoutText.count,
+                               linkedPagesSkipped: withoutText.count - todo.count)
         var replacements: [(PDFPage, PDFPage)] = []
         var texts: [String] = []
 
@@ -754,7 +773,14 @@ final class ViewerModel {
         return result
     }
 
+    /// Pages among `targets` that have no text yet but are bookmark or link targets.
+    func linkedPagesWithoutText(in targets: [PDFPage]) -> Int {
+        let referenced = PageReferences.referencedPages(in: pdf)
+        return targets.filter { referenced.contains(ObjectIdentifier($0)) && !hasText($0) }.count
+    }
+
     /// Swaps pages in place, moving annotations (including form fields) onto the replacement.
+    /// Bookmarks and links that point to a replaced page break when saved (see PageReferences).
     func replacePages(_ pairs: [(PDFPage, PDFPage)], name: String) {
         guard !pairs.isEmpty else { return }
         let index = currentPageIndex

@@ -9,7 +9,7 @@ struct OCRSheet: View {
 
     @State private var scope: Scope = .all
     @State private var language: OCRLanguage = .chineseEnglish
-    @State private var skipPagesWithText = true
+    @State private var includeLinkedPages = false
     @State private var task: Task<Void, Never>?
     @State private var progress = (done: 0, total: 0)
     @State private var result: ViewerModel.OCRResult?
@@ -44,7 +44,23 @@ struct OCRSheet: View {
                     Picker("语言", selection: $language) {
                         ForEach(OCRLanguage.allCases) { Text($0.title).tag($0) }
                     }
-                    Toggle("跳过已包含文字的页面", isOn: $skipPagesWithText)
+                    LabeledContent("") {
+                        Text("已包含文字的页面会自动跳过。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    let linked = model.linkedPagesWithoutText(in: targets)
+                    if linked > 0 {
+                        LabeledContent("") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Toggle("也识别被书签或链接指向的 \(linked) 页", isOn: $includeLinkedPages)
+                                Text("识别会替换这些页面，保存后指向它们的书签和链接将失效。")
+                                    .font(.caption)
+                                    .foregroundStyle(includeLinkedPages ? Color.orange : Color.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -94,7 +110,7 @@ struct OCRSheet: View {
         progress = (0, 0)
         task = Task { @MainActor in
             let outcome = await model.recognizeText(
-                in: pages, language: language, skipPagesWithText: skipPagesWithText
+                in: pages, language: language, includeLinkedPages: includeLinkedPages
             ) { done, total in
                 progress = (done, total)
             }
@@ -112,7 +128,8 @@ struct OCRSheet: View {
             .foregroundStyle(result.recognizedPages > 0 ? Color.green : Color.orange)
             .font(.body.weight(.medium))
             Text("已识别 \(result.recognizedPages) 页，共 \(result.lineCount) 行文字。"
-                 + (result.skippedPages > 0 ? "跳过了 \(result.skippedPages) 页已包含文字的页面。" : ""))
+                 + (result.pagesWithText > 0 ? "跳过了 \(result.pagesWithText) 页已包含文字的页面。" : "")
+                 + (result.linkedPagesSkipped > 0 ? "跳过了 \(result.linkedPagesSkipped) 页被书签或链接指向的页面。" : ""))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             if result.recognizedPages > 0 {

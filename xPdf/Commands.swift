@@ -9,6 +9,12 @@ struct ViewerCommands: Commands {
     @FocusedValue(\.viewer) private var model
 
     var body: some Commands {
+        CommandGroup(after: .saveItem) {
+            Button("压缩 PDF…") { model?.isShowingCompress = true }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .disabled(model?.pages.isEmpty ?? true)
+        }
+
         CommandGroup(replacing: .printItem) {
             Button("打印…") { model?.print() }
                 .keyboardShortcut("p")

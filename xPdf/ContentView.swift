@@ -6,8 +6,11 @@ struct ContentView: View {
     @State private var model: ViewerModel
     @Environment(\.undoManager) private var undoManager
 
-    init(document: PDFFile) {
+    private let fileURL: URL?
+
+    init(document: PDFFile, fileURL: URL?) {
         self.document = document
+        self.fileURL = fileURL
         _model = State(initialValue: ViewerModel(pdf: document.pdf, originalData: document.originalData))
     }
 
@@ -50,9 +53,11 @@ struct ContentView: View {
             document.commitPendingEdits = { [model] in model.commitFormEditing() }
         }
         .onChange(of: undoManager) { _, manager in model.undoManager = manager }
+        .onChange(of: fileURL, initial: true) { _, url in model.fileURL = url }
         .sheet(isPresented: $model.isEditingNote) { NoteSheet(model: model) }
         .sheet(isPresented: $model.isCreatingSignature) { SignatureSheet(model: model) }
         .sheet(isPresented: $model.isShowingOCR) { OCRSheet(model: model) }
+        .sheet(isPresented: $model.isShowingCompress) { CompressSheet(model: model) }
         .alert("出错了", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
