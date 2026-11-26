@@ -465,7 +465,13 @@ final class ViewerModel {
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = "导出的页面.pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        if !output.write(to: url) { errorMessage = "导出失败。" }
+        // Copied pages keep the stamps' /NM, so inserted images can be matched to the originals.
+        guard let data = output.dataRepresentation().map({
+            ImageStamp.embedAppearances(in: $0, stamps: ImageStamp.pendingStamps(in: [pdf]))
+        }), (try? data.write(to: url, options: .atomic)) != nil else {
+            errorMessage = "导出失败。"
+            return
+        }
     }
 
     func exportImages(_ targets: [PDFPage]) {
@@ -690,23 +696,15 @@ final class ViewerModel {
         size = CGSize(width: max(16, size.width * scale), height: max(16, size.height * scale))
         if rotated { size = CGSize(width: size.height, height: size.width) }
 
-        guard let (source, annotation) = ImageStamp.make(rotatedImage(cgImage, by: page.rotation), size: size),
-              let stampPage = source.page(at: 0) else {
-            errorMessage = "无法插入这张图片。"
-            return
-        }
         var center = view.convert(centerInView, to: page)
         center.x = min(max(center.x, pageBounds.minX + size.width / 2), pageBounds.maxX - size.width / 2)
         center.y = min(max(center.y, pageBounds.minY + size.height / 2), pageBounds.maxY - size.height / 2)
 
-        // PDFKit only writes a moved annotation's appearance if its page was part of this document.
-        sourceDocuments.append(source)
-        pdf.insert(stampPage, at: pdf.pageCount)
-        stampPage.removeAnnotation(annotation)
-        pdf.removePage(at: pdf.pageCount - 1)
-
-        annotation.bounds = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
-                                   width: size.width, height: size.height)
+        let annotation = ImageStampAnnotation(
+            image: rotatedImage(cgImage, by: page.rotation),
+            bounds: CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+                           width: size.width, height: size.height)
+        )
         annotation.userName = NSFullUserName()
         tool = .select
         addAnnotations([(page, annotation)], name: "插入图片")
@@ -889,7 +887,9 @@ final class ViewerModel {
     /// The document as it would be saved now, including unsaved edits.
     func currentDocumentData() -> Data? {
         commitFormEditing()
-        return pdf.dataRepresentation()
+        return pdf.dataRepresentation().map {
+            ImageStamp.embedAppearances(in: $0, stamps: ImageStamp.pendingStamps(in: [pdf]))
+        }
     }
 
     // MARK: - OCR

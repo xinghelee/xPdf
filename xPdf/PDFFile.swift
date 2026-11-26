@@ -30,7 +30,8 @@ final class PDFFile: ReferenceFileDocument {
         guard let data = pdf.dataRepresentation() else {
             throw CocoaError(.fileWriteUnknown)
         }
-        return data
+        // Inserted images get their appearance in an incremental update (see ImageStampAnnotation).
+        return ImageStamp.embedAppearances(in: data, stamps: ImageStamp.pendingStamps(in: [pdf]))
     }
 
     func fileWrapper(snapshot: Data, configuration: WriteConfiguration) throws -> FileWrapper {

@@ -38,8 +38,10 @@ struct RecentDocument: Identifiable, Hashable {
 
     var folder: String {
         let path = url.deletingLastPathComponent().path
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+        // In the sandbox the home directory APIs return the app's container, so ask the user database.
+        guard let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir else { return path }
+        let home = String(cString: dir)
+        return path == home || path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
 }
 
