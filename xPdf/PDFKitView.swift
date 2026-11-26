@@ -34,6 +34,10 @@ final class XPDFView: PDFView {
         return overlay
     }()
 
+    // Shape being dragged out (view coordinates).
+    private var shapeStart: CGPoint?
+    private var shapePage: PDFPage?
+
     // Annotation being moved or resized.
     private struct DragState {
         let page: PDFPage
@@ -148,6 +152,10 @@ final class XPDFView: PDFView {
         case .eraser:
             erase(at: point)
             return
+        case .shape:
+            shapePage = page(for: point, nearest: true)
+            shapeStart = point
+            return
         case .select:
             if let (page, annotation) = annotationHit(at: point, movableOnly: true) {
                 let p = convert(point, to: page)
@@ -185,11 +193,23 @@ final class XPDFView: PDFView {
             erase(at: point)
             return
         }
+        if model.tool == .shape, let start = shapeStart {
+            inkOverlay.color = model.inkColor.nsColor
+            inkOverlay.lineWidth = model.inkWidth * scaleFactor
+            inkOverlay.shape = (model.shapeKind, start, constrained(point, from: start, kind: model.shapeKind, event: event))
+            return
+        }
         if var state = drag {
             let p = convert(point, to: state.page)
             let dx = p.x - state.start.x
             let dy = p.y - state.start.y
-            if state.resizing {
+            if state.resizing, ["Square", "Circle"].contains(state.annotation.type ?? "") {
+                // Rectangles and ellipses: drag the bottom-right corner freely; the top-left stays fixed.
+                let width = max(6, state.bounds.width + dx)
+                let height = max(6, state.bounds.height - dy)
+                let newBounds = CGRect(x: state.bounds.minX, y: state.bounds.maxY - height, width: width, height: height)
+                ViewerModel.applyGeometry(state.annotation, bounds: newBounds, paths: nil)
+            } else if state.resizing {
                 // Drag the bottom-right corner; keep the top-left fixed and the aspect ratio.
                 let width = max(16, state.bounds.width + dx)
                 let scale = width / state.bounds.width
@@ -228,6 +248,17 @@ final class XPDFView: PDFView {
             return
         }
         if model.tool == .eraser { return }
+        if model.tool == .shape, let start = shapeStart {
+            let end = constrained(convert(event.locationInWindow, from: nil), from: start, kind: model.shapeKind, event: event)
+            if let page = shapePage {
+                model.addShape(model.shapeKind, from: convert(start, to: page), to: convert(end, to: page), on: page)
+                sharpenAnnotationsSoon()
+            }
+            shapeStart = nil
+            shapePage = nil
+            inkOverlay.shape = nil
+            return
+        }
         if let state = drag {
             drag = nil
             if state.moved {
@@ -255,7 +286,7 @@ final class XPDFView: PDFView {
         super.mouseMoved(with: event)
         guard let model else { return }
         let point = convert(event.locationInWindow, from: nil)
-        if model.pendingSignature != nil || model.tool == .ink {
+        if model.pendingSignature != nil || model.tool == .ink || model.tool == .shape {
             NSCursor.crosshair.set()
         } else if model.tool == .eraser {
             (annotationHit(at: point, movableOnly: false) != nil ? NSCursor.pointingHand : NSCursor.arrow).set()
@@ -335,9 +366,31 @@ final class XPDFView: PDFView {
     }
 
     private func isOnResizeHandle(_ p: CGPoint, of annotation: PDFAnnotation) -> Bool {
-        guard annotation.type == "Ink" else { return false }
+        guard ["Ink", "Stamp", "Square", "Circle"].contains(annotation.type ?? "") else { return false }
         let handle = 10 / max(scaleFactor, 0.01)
         return abs(p.x - annotation.bounds.maxX) < handle && abs(p.y - annotation.bounds.minY) < handle
+    }
+
+    /// With Shift held: squares and circles for boxes, 45° steps for lines.
+    private func constrained(_ point: CGPoint, from start: CGPoint, kind: ShapeKind, event: NSEvent) -> CGPoint {
+        guard event.modifierFlags.contains(.shift) else { return point }
+        let dx = point.x - start.x, dy = point.y - start.y
+        switch kind {
+        case .rectangle, .ellipse, .whiteout:
+            let side = max(abs(dx), abs(dy))
+            return CGPoint(x: start.x + (dx < 0 ? -side : side), y: start.y + (dy < 0 ? -side : side))
+        case .line, .arrow:
+            let length = hypot(dx, dy)
+            let angle = (atan2(dy, dx) / (.pi / 4)).rounded() * (.pi / 4)
+            return CGPoint(x: start.x + cos(angle) * length, y: start.y + sin(angle) * length)
+        }
+    }
+
+    // MARK: - Paste
+
+    /// ⌘V with an image on the clipboard inserts it on the current page.
+    @objc func paste(_ sender: Any?) {
+        if model?.pasteImage() != true { NSSound.beep() }
     }
 
     private func erase(at point: CGPoint) {
@@ -389,16 +442,61 @@ final class InkOverlayView: NSView {
     var points: [CGPoint] = [] { didSet { needsDisplay = true } }
     var color: NSColor = .black
     var lineWidth: CGFloat = 2
+    /// Shape preview: kind, start and current point.
+    var shape: (ShapeKind, CGPoint, CGPoint)? { didSet { needsDisplay = true } }
 
     override var isFlipped: Bool { superview?.isFlipped ?? false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
+        if let (kind, start, end) = shape {
+            drawShape(kind, from: start, to: end)
+            return
+        }
         guard !points.isEmpty else { return }
         let path = StrokePath.bezier(points)
         path.lineWidth = lineWidth
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
+        color.setStroke()
+        path.stroke()
+    }
+}
+
+extension InkOverlayView {
+    fileprivate func drawShape(_ kind: ShapeKind, from start: CGPoint, to end: CGPoint) {
+        let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+        let path: NSBezierPath
+        switch kind {
+        case .rectangle: path = NSBezierPath(rect: rect)
+        case .ellipse: path = NSBezierPath(ovalIn: rect)
+        case .whiteout:
+            NSColor.white.setFill()
+            NSBezierPath(rect: rect).fill()
+            let outline = NSBezierPath(rect: rect)
+            outline.lineWidth = 1
+            outline.setLineDash([4, 3], count: 2, phase: 0)
+            NSColor.secondaryLabelColor.setStroke()
+            outline.stroke()
+            return
+        case .line, .arrow:
+            path = NSBezierPath()
+            path.move(to: start)
+            path.line(to: end)
+            if kind == .arrow, hypot(end.x - start.x, end.y - start.y) > 1 {
+                let angle = atan2(end.y - start.y, end.x - start.x)
+                let size = max(8, lineWidth * 4)
+                let head = NSBezierPath()
+                head.move(to: end)
+                head.line(to: CGPoint(x: end.x - size * cos(angle - .pi / 7), y: end.y - size * sin(angle - .pi / 7)))
+                head.line(to: CGPoint(x: end.x - size * cos(angle + .pi / 7), y: end.y - size * sin(angle + .pi / 7)))
+                head.close()
+                color.setFill()
+                head.fill()
+            }
+        }
+        path.lineWidth = lineWidth
+        path.lineCapStyle = .round
         color.setStroke()
         path.stroke()
     }

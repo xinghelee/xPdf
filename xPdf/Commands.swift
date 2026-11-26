@@ -76,9 +76,16 @@ struct ViewerCommands: Commands {
                     Button("\(tool.title)工具") { model?.tool = tool }
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command, .control])
                 }
+                Menu("形状") {
+                    ForEach(ShapeKind.allCases) { kind in
+                        Button(kind.title) { model?.shapeKind = kind; model?.tool = .shape }
+                    }
+                }
                 Divider()
                 Button("添加文字批注…") { model?.isEditingNote = true }
                     .keyboardShortcut("t", modifiers: [.command, .option])
+                Button("插入图片…") { model?.insertImageFromFile() }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
                 Divider()
                 Button("新建签名…") { model?.isCreatingSignature = true }
                     .keyboardShortcut("s", modifiers: [.command, .option])

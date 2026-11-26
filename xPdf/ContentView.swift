@@ -124,7 +124,30 @@ struct DocumentToolbar: ToolbarContent {
         }
 
         ToolbarItem {
+            Menu {
+                Picker("形状", selection: Binding(
+                    get: { model.shapeKind },
+                    set: { model.shapeKind = $0; model.tool = .shape }
+                )) {
+                    ForEach(ShapeKind.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label("形状", systemImage: model.shapeKind.symbol)
+            }
+            .help("选择形状：矩形、椭圆、直线、箭头、白色遮盖（按住 Shift 画正方形、圆或 45° 线）")
+        }
+
+        ToolbarItem {
             SignatureMenu(model: model)
+        }
+
+        ToolbarItem {
+            Button { model.insertImageFromFile() } label: {
+                Label("插入图片", systemImage: "photo.badge.plus")
+            }
+            .help("在当前页面插入图片（也可以直接 ⌘V 粘贴图片）")
+            .disabled(model.pages.isEmpty)
         }
 
         ToolbarItem {
@@ -185,11 +208,17 @@ struct PageNumberField: View {
     let model: ViewerModel
     @State private var text = ""
 
+    /// Wide enough for the largest page number, so short numbers sit next to the "/".
+    private var fieldWidth: CGFloat {
+        CGFloat(max(2, String(model.pages.count).count)) * 9 + 14
+    }
+
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             TextField("页码", text: $text)
-                .frame(width: 44)
-                .multilineTextAlignment(.center)
+                .frame(width: fieldWidth)
+                .multilineTextAlignment(.trailing)
+                .monospacedDigit()
                 .onSubmit {
                     if let number = Int(text) { model.goToPage(number - 1) }
                     text = "\(model.currentPageIndex + 1)"
@@ -197,7 +226,10 @@ struct PageNumberField: View {
             Text("/ \(model.pages.count)")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+                .fixedSize()
         }
+        .padding(.leading, 2)
+        .padding(.trailing, 6)
         .onAppear { text = "\(model.currentPageIndex + 1)" }
         .onChange(of: model.currentPageIndex) { _, index in text = "\(index + 1)" }
     }

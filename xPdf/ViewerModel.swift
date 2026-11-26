@@ -8,7 +8,7 @@ enum SidebarMode: String, CaseIterable, Identifiable {
 }
 
 enum MarkupTool: String, CaseIterable, Identifiable {
-    case select, highlight, underline, strikeOut, ink, eraser
+    case select, highlight, underline, strikeOut, ink, eraser, shape
     var id: Self { self }
 
     var title: String {
@@ -19,6 +19,7 @@ enum MarkupTool: String, CaseIterable, Identifiable {
         case .strikeOut: "删除线"
         case .ink: "画笔"
         case .eraser: "橡皮擦"
+        case .shape: "形状"
         }
     }
 
@@ -30,15 +31,41 @@ enum MarkupTool: String, CaseIterable, Identifiable {
         case .strikeOut: "strikethrough"
         case .ink: "pencil.tip"
         case .eraser: "eraser"
+        case .shape: "square.on.circle"
         }
     }
 
     var subtype: PDFAnnotationSubtype? {
         switch self {
-        case .select, .ink, .eraser: nil
+        case .select, .ink, .eraser, .shape: nil
         case .highlight: .highlight
         case .underline: .underline
         case .strikeOut: .strikeOut
+        }
+    }
+}
+
+enum ShapeKind: String, CaseIterable, Identifiable {
+    case rectangle, ellipse, line, arrow, whiteout
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .rectangle: "矩形"
+        case .ellipse: "椭圆"
+        case .line: "直线"
+        case .arrow: "箭头"
+        case .whiteout: "白色遮盖"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .rectangle: "rectangle"
+        case .ellipse: "circle"
+        case .line: "line.diagonal"
+        case .arrow: "arrow.up.right"
+        case .whiteout: "rectangle.fill"
         }
     }
 }
@@ -148,6 +175,7 @@ final class ViewerModel {
     var markupColor: MarkupColor = .yellow
     var inkColor: MarkupColor = .black
     var inkWidth: CGFloat = 2
+    var shapeKind: ShapeKind = .rectangle
     var pendingSignature: Signature?
     var isCreatingSignature = false
     var hasForm = false
@@ -566,6 +594,126 @@ final class ViewerModel {
         annotation.contents = "签名"
         addAnnotations([(page, annotation)], name: "添加签名")
         pendingSignature = nil
+    }
+
+    // MARK: - Shapes & images
+
+    /// Adds a shape dragged from `start` to `end` (page space).
+    func addShape(_ kind: ShapeKind, from start: CGPoint, to end: CGPoint, on page: PDFPage) {
+        let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                          width: abs(end.x - start.x), height: abs(end.y - start.y))
+        let annotation: PDFAnnotation
+        switch kind {
+        case .rectangle, .ellipse, .whiteout:
+            guard rect.width >= 3, rect.height >= 3 else { return }
+            annotation = PDFAnnotation(bounds: rect, forType: kind == .ellipse ? .circle : .square, withProperties: nil)
+            let border = PDFBorder()
+            if kind == .whiteout {
+                annotation.color = .white
+                annotation.interiorColor = .white
+                border.lineWidth = 0
+                annotation.contents = "遮盖"
+            } else {
+                annotation.color = inkColor.nsColor
+                border.lineWidth = inkWidth
+            }
+            annotation.border = border
+        case .line, .arrow:
+            guard hypot(end.x - start.x, end.y - start.y) >= 4 else { return }
+            let pad = max(inkWidth * 4, 8)
+            let bounds = rect.insetBy(dx: -pad, dy: -pad)
+            annotation = PDFAnnotation(bounds: bounds, forType: .line, withProperties: nil)
+            annotation.startPoint = CGPoint(x: start.x - bounds.minX, y: start.y - bounds.minY)
+            annotation.endPoint = CGPoint(x: end.x - bounds.minX, y: end.y - bounds.minY)
+            if kind == .arrow { annotation.endLineStyle = .closedArrow }
+            annotation.color = inkColor.nsColor
+            if kind == .arrow { annotation.interiorColor = inkColor.nsColor }
+            let border = PDFBorder()
+            border.lineWidth = inkWidth
+            annotation.border = border
+        }
+        annotation.userName = NSFullUserName()
+        addAnnotations([(page, annotation)], name: "添加\(kind.title)")
+    }
+
+    func insertImageFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.message = "选择要插入到页面上的图片"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let image = NSImage(contentsOf: url) else {
+            errorMessage = "无法读取这张图片。"
+            return
+        }
+        insertImage(image)
+    }
+
+    func pasteImage(from pasteboard: NSPasteboard = .general) -> Bool {
+        guard let image = (pasteboard.readObjects(forClasses: [NSImage.self]) as? [NSImage])?.first else { return false }
+        insertImage(image)
+        return true
+    }
+
+    /// Places `image` in the middle of the visible part of the current page, at most 60% of the page.
+    func insertImage(_ image: NSImage) {
+        guard let view = pdfView else { return }
+        var rect = CGRect(origin: .zero, size: image.size)
+        guard let cgImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil),
+              image.size.width > 0, image.size.height > 0 else {
+            errorMessage = "无法读取这张图片。"
+            return
+        }
+        let centerInView = NSPoint(x: view.bounds.midX, y: view.bounds.midY)
+        guard let page = view.page(for: centerInView, nearest: true) else { return }
+        let pageBounds = page.bounds(for: .cropBox)
+        // Displayed size in points, keeping the aspect ratio. Page rotation swaps the visible axes.
+        let rotated = page.rotation % 180 != 0
+        let maxWidth = (rotated ? pageBounds.height : pageBounds.width) * 0.6
+        let maxHeight = (rotated ? pageBounds.width : pageBounds.height) * 0.6
+        var size = image.size
+        let scale = min(1, maxWidth / size.width, maxHeight / size.height)
+        size = CGSize(width: max(16, size.width * scale), height: max(16, size.height * scale))
+        if rotated { size = CGSize(width: size.height, height: size.width) }
+
+        guard let (source, annotation) = ImageStamp.make(rotatedImage(cgImage, by: page.rotation), size: size),
+              let stampPage = source.page(at: 0) else {
+            errorMessage = "无法插入这张图片。"
+            return
+        }
+        var center = view.convert(centerInView, to: page)
+        center.x = min(max(center.x, pageBounds.minX + size.width / 2), pageBounds.maxX - size.width / 2)
+        center.y = min(max(center.y, pageBounds.minY + size.height / 2), pageBounds.maxY - size.height / 2)
+
+        // PDFKit only writes a moved annotation's appearance if its page was part of this document.
+        sourceDocuments.append(source)
+        pdf.insert(stampPage, at: pdf.pageCount)
+        stampPage.removeAnnotation(annotation)
+        pdf.removePage(at: pdf.pageCount - 1)
+
+        annotation.bounds = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+                                   width: size.width, height: size.height)
+        annotation.userName = NSFullUserName()
+        tool = .select
+        addAnnotations([(page, annotation)], name: "插入图片")
+    }
+
+    /// The stamp is drawn in page space, so counter-rotate the image for a rotated page.
+    private func rotatedImage(_ image: CGImage, by rotation: Int) -> CGImage {
+        let turns = ((rotation % 360) + 360) % 360 / 90
+        guard turns != 0 else { return image }
+        let swap = turns % 2 == 1
+        let w = swap ? image.height : image.width, h = swap ? image.width : image.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return image }
+        ctx.translateBy(x: CGFloat(w) / 2, y: CGFloat(h) / 2)
+        // The page is displayed turned clockwise; a positive angle (y up) turns the image
+        // counter-clockwise, so it ends up upright on screen.
+        ctx.rotate(by: CGFloat(turns) * .pi / 2)
+        ctx.draw(image, in: CGRect(x: -CGFloat(image.width) / 2, y: -CGFloat(image.height) / 2,
+                                   width: CGFloat(image.width), height: CGFloat(image.height)))
+        return ctx.makeImage() ?? image
     }
 
     private func makeInk(bounds: CGRect, paths: [NSBezierPath], width: CGFloat) -> PDFAnnotation {

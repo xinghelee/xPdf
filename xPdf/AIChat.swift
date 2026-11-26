@@ -235,7 +235,7 @@ struct AIChatPanel: View {
             }
         }
         .environment(\.openURL, OpenURLAction { url in
-            guard url.scheme == "xpdf-page", let number = Int(url.host() ?? "") else { return .systemAction }
+            guard url.scheme == "xpdf-page", let number = Int(url.host() ?? "") else { return .discarded }
             model.goToPage(number - 1)
             return .handled
         })
@@ -388,7 +388,13 @@ private struct MessageView: View {
         let linked = lines.joined(separator: "\n")
             .replacingOccurrences(of: #"第\s*(\d{1,5})\s*页"#, with: "[第 $1 页](xpdf-page://$1)", options: .regularExpression)
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: linked, options: options)) ?? AttributedString(text)
+        guard var result = try? AttributedString(markdown: linked, options: options) else { return AttributedString(text) }
+        // The reply is untrusted (a document can carry instructions for the model): keep only the
+        // page links added above, so a reply cannot plant a clickable link to an outside URL.
+        for run in result.runs where run.link.map({ $0.scheme != "xpdf-page" }) == true {
+            result[run.range].link = nil
+        }
+        return result
     }
 }
 
