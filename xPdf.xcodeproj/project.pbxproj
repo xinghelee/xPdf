@@ -9,28 +9,34 @@
 /* Begin PBXBuildFile section */
 		0D2A98820F819624306EA319 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44A77293544F7C79D10BA90D /* ContentView.swift */; };
 		123E14E47A44C856B0B9E16F /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9F03CAADAC2F280F1018B27 /* Commands.swift */; };
+		1C38A249DE6CED35C7A888D9 /* Welcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED7F2F027D6505A45CF5350 /* Welcome.swift */; };
 		2F72D49C27942716234F3521 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 12CDE59147271C8D55B6F588 /* Assets.xcassets */; };
 		3E7A63EA96666ED7B3AD20C4 /* PDFKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88360097194F2464ECB35FB1 /* PDFKitView.swift */; };
 		44770D7A66BE28CA2513A136 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DEE8A7B8281E1306E62275 /* SidebarView.swift */; };
 		44E245E666853043B292E25B /* Signature.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB02EDDAD12D6BF88B5E41A9 /* Signature.swift */; };
 		4593588A3666C88DEC31294D /* Compress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C629A6B1107D218560E7CED /* Compress.swift */; };
+		4D5BEE432EE36F3CB40B48D1 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70BD8F72AF751B6806AA30E5 /* AIService.swift */; };
 		5419B386353D51D6796A4684 /* CompressSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D112C5EB3F9EE1167622A4 /* CompressSheet.swift */; };
 		68DBE55A134CE761098D0FFA /* OCRSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E3866BB298CF1B2D4B272E /* OCRSheet.swift */; };
 		77AC36ACEB5EDD4FBEF991D6 /* PDFFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472FC0DA89CDBDCEB2665A9A /* PDFFile.swift */; };
 		8BCBB6C9F73116E3458041B6 /* XPdfApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C3490F1FDE54581022305C /* XPdfApp.swift */; };
+		967F6746112E19C235A51D31 /* AIChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4110FA85B0B4FCD09DBC6A5E /* AIChat.swift */; };
 		A7BE44AEA916D70C022D2656 /* OCR.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F40772B9F6EC8F80853418 /* OCR.swift */; };
 		B8E0B3784EF9E7DB8437CAE6 /* ViewerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44CE7223B87AB52A414514A2 /* ViewerModel.swift */; };
 		F83C0E3D83CE6F2764170EA2 /* PageReferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4E2356220C344A249F0F9F /* PageReferences.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0ED7F2F027D6505A45CF5350 /* Welcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Welcome.swift; sourceTree = "<group>"; };
 		12CDE59147271C8D55B6F588 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1CB48599451A82C0ACEA1663 /* xPdf.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = xPdf.entitlements; sourceTree = "<group>"; };
+		4110FA85B0B4FCD09DBC6A5E /* AIChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChat.swift; sourceTree = "<group>"; };
 		44A77293544F7C79D10BA90D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		44CE7223B87AB52A414514A2 /* ViewerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerModel.swift; sourceTree = "<group>"; };
 		472FC0DA89CDBDCEB2665A9A /* PDFFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFFile.swift; sourceTree = "<group>"; };
 		537DDECD02857EA968617C6F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		57C3490F1FDE54581022305C /* XPdfApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XPdfApp.swift; sourceTree = "<group>"; };
+		70BD8F72AF751B6806AA30E5 /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
 		88360097194F2464ECB35FB1 /* PDFKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFKitView.swift; sourceTree = "<group>"; };
 		8C629A6B1107D218560E7CED /* Compress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Compress.swift; sourceTree = "<group>"; };
 		9CDF59AE0394A786B2E04916 /* xPdf.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = xPdf.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -47,6 +53,8 @@
 		17EC67D46C908131F7B9E1C5 /* xPdf */ = {
 			isa = PBXGroup;
 			children = (
+				4110FA85B0B4FCD09DBC6A5E /* AIChat.swift */,
+				70BD8F72AF751B6806AA30E5 /* AIService.swift */,
 				12CDE59147271C8D55B6F588 /* Assets.xcassets */,
 				D9F03CAADAC2F280F1018B27 /* Commands.swift */,
 				8C629A6B1107D218560E7CED /* Compress.swift */,
@@ -61,6 +69,7 @@
 				A0DEE8A7B8281E1306E62275 /* SidebarView.swift */,
 				EB02EDDAD12D6BF88B5E41A9 /* Signature.swift */,
 				44CE7223B87AB52A414514A2 /* ViewerModel.swift */,
+				0ED7F2F027D6505A45CF5350 /* Welcome.swift */,
 				1CB48599451A82C0ACEA1663 /* xPdf.entitlements */,
 				57C3490F1FDE54581022305C /* XPdfApp.swift */,
 			);
@@ -153,6 +162,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				967F6746112E19C235A51D31 /* AIChat.swift in Sources */,
+				4D5BEE432EE36F3CB40B48D1 /* AIService.swift in Sources */,
 				123E14E47A44C856B0B9E16F /* Commands.swift in Sources */,
 				4593588A3666C88DEC31294D /* Compress.swift in Sources */,
 				5419B386353D51D6796A4684 /* CompressSheet.swift in Sources */,
@@ -165,6 +176,7 @@
 				44770D7A66BE28CA2513A136 /* SidebarView.swift in Sources */,
 				44E245E666853043B292E25B /* Signature.swift in Sources */,
 				B8E0B3784EF9E7DB8437CAE6 /* ViewerModel.swift in Sources */,
+				1C38A249DE6CED35C7A888D9 /* Welcome.swift in Sources */,
 				8BCBB6C9F73116E3458041B6 /* XPdfApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

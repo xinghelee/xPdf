@@ -154,6 +154,11 @@ final class ViewerModel {
     var showsFormBanner = true
     var isShowingOCR = false
     var isShowingCompress = false
+    var isShowingAI = false
+    /// Text currently selected in the document (for quoting in the AI chat), and its page index.
+    var selectedText: String?
+    var selectedTextPage: Int?
+    @ObservationIgnored let chat = ChatSession()
     /// Where the document lives, if it has been saved.
     var fileURL: URL?
     /// No page among the first few has a text layer: probably a scan.
@@ -191,6 +196,9 @@ final class ViewerModel {
             },
             center.addObserver(forName: .PDFViewScaleChanged, object: view, queue: .main) { [weak self, weak view] _ in
                 self?.scale = view?.scaleFactor ?? 1
+            },
+            center.addObserver(forName: .PDFViewSelectionChanged, object: view, queue: .main) { [weak self, weak view] _ in
+                self?.syncSelectedText(view?.currentSelection)
             },
         ]
         // PDFKit edits text fields through a field editor inside the PDFView.
@@ -233,6 +241,12 @@ final class ViewerModel {
 
     func hasText(_ page: PDFPage) -> Bool {
         OCREngine.hasTextContent(pristine(page))
+    }
+
+    private func syncSelectedText(_ selection: PDFSelection?) {
+        let text = selection?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+        selectedText = text?.isEmpty == false ? text : nil
+        selectedTextPage = selection?.pages.first.map { pdf.index(for: $0) }.flatMap { $0 == NSNotFound ? nil : $0 }
     }
 
     private func syncCurrentPage() {

@@ -28,6 +28,10 @@ struct ViewerCommands: Commands {
             Button("实际大小") { model?.actualSize() }.keyboardShortcut("0")
             Button("适合窗口") { model?.zoomToFit() }.keyboardShortcut("9")
             Divider()
+            Button(model?.isShowingAI == true ? "隐藏 AI 助手" : "显示 AI 助手") { model?.isShowingAI.toggle() }
+                .keyboardShortcut("a", modifiers: [.command, .option])
+                .disabled(model == nil)
+            Divider()
             Menu("页面显示") {
                 Button("单页") { model?.displayMode = .singlePage }
                 Button("单页连续") { model?.displayMode = .singlePageContinuous }

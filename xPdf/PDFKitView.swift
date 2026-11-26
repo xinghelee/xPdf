@@ -63,6 +63,69 @@ final class XPDFView: PDFView {
         fieldEditingUndoManager.removeAllActions()
     }
 
+    // MARK: - Sharp annotations
+
+    // PDFView draws page content in tiles rendered for the current zoom, but draws annotations in
+    // separate layers whose contentsScale stays at 1, so ink, notes and stamps turn blurry and
+    // pixelated when zoomed in. Raise those layers' scale to match the zoom and redraw them.
+    private var sharpenTimer: Timer?
+    private var sharpenObservers: [NSObjectProtocol] = []
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        sharpenTimer?.invalidate()
+        sharpenTimer = nil
+        sharpenObservers.forEach(NotificationCenter.default.removeObserver)
+        sharpenObservers = []
+        guard window != nil else { return }
+        let center = NotificationCenter.default
+        for name in [Notification.Name.PDFViewScaleChanged, .PDFViewPageChanged, .PDFViewDisplayModeChanged] {
+            sharpenObservers.append(center.addObserver(forName: name, object: self, queue: .main) { [weak self] _ in
+                self?.sharpenAnnotationsSoon()
+            })
+        }
+        if let clip = enclosingScrollViewForSharpening?.contentView {
+            clip.postsBoundsChangedNotifications = true
+            sharpenObservers.append(center.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
+                self?.sharpenAnnotations()
+            })
+        }
+        // Catches annotation layers created any other way (new ink, undo, scrolling into view).
+        sharpenTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.sharpenAnnotations()
+        }
+    }
+
+    private var enclosingScrollViewForSharpening: NSScrollView? {
+        subviews.lazy.compactMap { $0 as? NSScrollView }.first
+    }
+
+    func sharpenAnnotationsSoon() {
+        DispatchQueue.main.async { [weak self] in self?.sharpenAnnotations() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.sharpenAnnotations() }
+    }
+
+    private func sharpenAnnotations() {
+        guard let window, window.isVisible, let root = layer else { return }
+        let target = scaleFactor * window.backingScaleFactor
+        sharpen(root, target: target, depth: 0)
+    }
+
+    private func sharpen(_ layer: CALayer, target: CGFloat, depth: Int) {
+        guard depth < 12 else { return }
+        if NSStringFromClass(type(of: layer)).hasPrefix("PDFPageLayerAnnotation") {
+            // Keep each layer's backing store within 4096 px on its longer side.
+            let side = max(layer.bounds.width, layer.bounds.height, 1)
+            let scale = max(1, min(target, 4096 / side))
+            if abs(layer.contentsScale - scale) > 0.01 {
+                layer.contentsScale = scale
+                layer.setNeedsDisplay()
+            }
+            return
+        }
+        for sublayer in layer.sublayers ?? [] { sharpen(sublayer, target: target, depth: depth + 1) }
+    }
+
     // MARK: - Mouse
 
     override func mouseDown(with event: NSEvent) {
@@ -145,6 +208,7 @@ final class XPDFView: PDFView {
             state.moved = true
             drag = state
             annotationsChanged(on: state.page)
+            sharpenAnnotationsSoon()
             return
         }
         super.mouseDragged(with: event)
@@ -157,6 +221,7 @@ final class XPDFView: PDFView {
             if let page = inkPage {
                 model.addInk(points: inkPoints.map { convert($0, to: page) }, on: page)
             }
+            sharpenAnnotationsSoon()
             inkPoints = []
             inkPage = nil
             updateInkOverlay()

@@ -5,6 +5,7 @@ struct ContentView: View {
     let document: PDFFile
     @State private var model: ViewerModel
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.dismissWindow) private var dismissWindow
 
     private let fileURL: URL?
 
@@ -41,6 +42,10 @@ struct ContentView: View {
                         return true
                     }
                     .toolbar { DocumentToolbar(model: model) }
+                    .inspector(isPresented: $model.isShowingAI) {
+                        AIChatPanel(model: model)
+                            .inspectorColumnWidth(min: 300, ideal: 360, max: 560)
+                    }
                 }
                 .searchable(text: $model.searchText, placement: .toolbar, prompt: "在文档中搜索")
                 .onSubmit(of: .search) { model.performSearch() }
@@ -53,7 +58,11 @@ struct ContentView: View {
             document.commitPendingEdits = { [model] in model.commitFormEditing() }
         }
         .onChange(of: undoManager) { _, manager in model.undoManager = manager }
-        .onChange(of: fileURL, initial: true) { _, url in model.fileURL = url }
+        .onChange(of: fileURL, initial: true) { _, url in
+            model.fileURL = url
+            if let url { OpenHistory.record(url) }
+        }
+        .onAppear { dismissWindow(id: WelcomeView.windowID) }
         .sheet(isPresented: $model.isEditingNote) { NoteSheet(model: model) }
         .sheet(isPresented: $model.isCreatingSignature) { SignatureSheet(model: model) }
         .sheet(isPresented: $model.isShowingOCR) { OCRSheet(model: model) }
@@ -161,6 +170,13 @@ struct DocumentToolbar: ToolbarContent {
             }
             .help("向右旋转所选页面")
             .disabled(model.pages.isEmpty)
+        }
+
+        ToolbarItem {
+            Toggle(isOn: $model.isShowingAI) {
+                Label("AI 助手", systemImage: "sparkles")
+            }
+            .help("与 AI 讨论这份文档（⌥⌘A）")
         }
     }
 }
