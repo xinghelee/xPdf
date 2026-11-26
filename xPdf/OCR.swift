@@ -46,7 +46,7 @@ enum OCREngine {
         CGPDFOperatorTableSetCallback(table, "Do") { scanner, info in
             guard let info else { return }
             let scan = info.assumingMemoryBound(to: TextScan.self)
-            guard !scan.pointee.found, scan.pointee.depth < 8 else { return }
+            guard !scan.pointee.found, scan.pointee.depth < 8, scan.pointee.budget > 0 else { return }
             var name: UnsafePointer<CChar>?
             guard CGPDFScannerPopName(scanner, &name), let name else { return }
             let parent = CGPDFScannerGetContentStream(scanner)
@@ -54,6 +54,11 @@ enum OCREngine {
             var stream: CGPDFStreamRef?
             guard CGPDFObjectGetValue(object, .stream, &stream), let stream,
                   let dict = CGPDFStreamGetDictionary(stream) else { return }
+            // A form that is drawn many times (or draws itself) only needs scanning once; whether it
+            // contains text does not depend on where it is used. Without this a crafted file can make
+            // the scan grow exponentially with nesting depth.
+            guard scan.pointee.visited.insert(stream).inserted else { return }
+            scan.pointee.budget -= 1
             var subtype: UnsafePointer<CChar>?
             guard CGPDFDictionaryGetName(dict, "Subtype", &subtype), let subtype,
                   String(cString: subtype) == "Form" else { return }
@@ -78,6 +83,9 @@ enum OCREngine {
         let table: CGPDFOperatorTableRef
         var found = false
         var depth = 0
+        var visited: Set<CGPDFStreamRef> = []
+        /// Upper bound on form XObjects scanned per page.
+        var budget = 256
     }
 
     /// Page geometry: the crop box in page space, the transform from (crop-box-relative) page space
