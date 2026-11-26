@@ -25,7 +25,11 @@ struct ContentView: View {
                         if model.pages.isEmpty { EmptyDocumentView(model: model) }
                     }
                     .overlay(alignment: .top) {
-                        if model.pendingSignature != nil { PlacementBanner(model: model) }
+                        if model.pendingSignature != nil {
+                            PlacementBanner(model: model)
+                        } else if model.hasForm && model.showsFormBanner {
+                            FormBanner(model: model)
+                        }
                     }
                     .dropDestination(for: URL.self) { urls, _ in
                         model.insertFiles(urls, at: model.insertionIndex)
@@ -39,7 +43,10 @@ struct ContentView: View {
         }
         .frame(minWidth: 820, minHeight: 540)
         .focusedSceneValue(\.viewer, model)
-        .onAppear { model.undoManager = undoManager }
+        .onAppear {
+            model.undoManager = undoManager
+            document.commitPendingEdits = { [weak model] in model?.commitFormEditing() }
+        }
         .onChange(of: undoManager) { _, manager in model.undoManager = manager }
         .sheet(isPresented: $model.isEditingNote) { NoteSheet(model: model) }
         .sheet(isPresented: $model.isCreatingSignature) { SignatureSheet(model: model) }
@@ -253,8 +260,7 @@ struct ColorLabel: View {
         Label {
             Text(color.title)
         } icon: {
-            Image(systemName: "circle.fill")
-                .foregroundStyle(Color(nsColor: color.nsColor))
+            Image(nsImage: color.swatch)
         }
     }
 }
@@ -310,6 +316,31 @@ struct PlacementBanner: View {
             Text("点击页面放置签名。放置后可拖动移动，拖右下角缩放。")
             Button("取消") { model.pendingSignature = nil }
                 .keyboardShortcut(.cancelAction)
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+        .padding(.top, 12)
+    }
+}
+
+struct FormBanner: View {
+    let model: ViewerModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "list.bullet.rectangle")
+            Text("此文档包含可填写的表单，点击字段即可填写，Tab 键切换下一个字段。")
+            Button("清除表单") { model.resetForm() }
+            Button {
+                model.showsFormBanner = false
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .help("隐藏提示")
         }
         .font(.callout)
         .padding(.horizontal, 14)

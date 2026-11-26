@@ -45,6 +45,23 @@ final class XPDFView: PDFView {
         var moved = false
     }
     private var drag: DragState?
+    private var choiceMenu: NSMenu?
+
+    /// Undo manager for PDFKit's form text editing view while it is active. Keeps its
+    /// per-keystroke undo out of the document's stack: inside a field ⌘Z undoes typing,
+    /// and the finished entry is a single "填写表单" step in the document.
+    private let fieldEditingUndoManager = UndoManager()
+
+    override var undoManager: UndoManager? {
+        if let editor = window?.firstResponder as? NSView, editor !== self, editor.isDescendant(of: self) {
+            return fieldEditingUndoManager
+        }
+        return super.undoManager
+    }
+
+    func resetFieldEditingUndo() {
+        fieldEditingUndoManager.removeAllActions()
+    }
 
     // MARK: - Mouse
 
@@ -84,7 +101,12 @@ final class XPDFView: PDFView {
         default:
             break
         }
+        if let (page, field) = popUpChoiceField(at: point) {
+            showChoiceMenu(for: field, on: page)
+            return
+        }
         super.mouseDown(with: event)
+        model.checkFormChanges()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -155,6 +177,7 @@ final class XPDFView: PDFView {
         }
 
         super.mouseUp(with: event)
+        model.checkFormChanges()
         guard let subtype = model.tool.subtype,
               let selection = currentSelection,
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -202,6 +225,48 @@ final class XPDFView: PDFView {
             return (page, annotation)
         }
         return nil
+    }
+
+    /// A non-editable combo box field. PDFKit's own pop-up for these ignores the zoom level
+    /// and renders tiny items, so a standard menu is shown instead.
+    private func popUpChoiceField(at point: CGPoint) -> (PDFPage, PDFAnnotation)? {
+        guard let page = page(for: point, nearest: false) else { return nil }
+        let p = convert(point, to: page)
+        guard let field = page.annotations.last(where: {
+            $0.type == "Widget" && $0.widgetFieldType == .choice && $0.bounds.contains(p)
+        }), !field.isListChoice, !(field.choices ?? []).isEmpty else { return nil }
+        let flags = (field.value(forAnnotationKey: .widgetFieldFlags) as? NSNumber)?.intValue ?? 0
+        let editable = flags & (1 << 18) != 0
+        return editable ? nil : (page, field)
+    }
+
+    private func showChoiceMenu(for field: PDFAnnotation, on page: PDFPage) {
+        let menu = NSMenu()
+        // Menu items only weakly reference their target; keep the menu alive until its action has run.
+        choiceMenu = menu
+        defer { DispatchQueue.main.async { [weak self] in self?.choiceMenu = nil } }
+        menu.font = .menuFont(ofSize: 0)
+        var selected: NSMenuItem?
+        for choice in field.choices ?? [] {
+            let item = ClosureMenuItem(title: choice) { [weak self] in
+                guard field.widgetStringValue != choice else { return }
+                // Apply after menu tracking ends so the change lands in a normal undo group.
+                DispatchQueue.main.async {
+                    field.widgetStringValue = choice
+                    self?.annotationsChanged(on: page)
+                    self?.model?.checkFormChanges()
+                }
+            }
+            if choice == field.widgetStringValue {
+                item.state = .on
+                selected = item
+            }
+            menu.addItem(item)
+        }
+        let rect = convert(field.bounds, from: page)
+        menu.minimumWidth = rect.width
+        let origin = NSPoint(x: rect.minX, y: isFlipped ? rect.minY : rect.maxY)
+        menu.popUp(positioning: selected, at: origin, in: self)
     }
 
     private func isOnResizeHandle(_ p: CGPoint, of annotation: PDFAnnotation) -> Bool {

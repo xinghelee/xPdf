@@ -6,6 +6,8 @@ final class PDFFile: ReferenceFileDocument {
     static let readableContentTypes: [UTType] = [.pdf]
 
     let pdf: PDFDocument
+    /// Called before saving so in-progress edits (e.g. a form field being typed in) are committed.
+    var commitPendingEdits: (() -> Void)?
 
     init() {
         pdf = PDFDocument()
@@ -20,6 +22,7 @@ final class PDFFile: ReferenceFileDocument {
     }
 
     func snapshot(contentType: UTType) throws -> Data {
+        if Thread.isMainThread { commitPendingEdits?() }
         guard let data = pdf.dataRepresentation() else {
             throw CocoaError(.fileWriteUnknown)
         }

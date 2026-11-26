@@ -58,6 +58,22 @@ enum MarkupColor: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Colored dot for menus. Not a template image, so menus keep the real color.
+    var swatch: NSImage {
+        let color = nsColor
+        let image = NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            let dot = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+            color.setFill()
+            dot.fill()
+            NSColor.gray.withAlphaComponent(0.5).setStroke()
+            dot.lineWidth = 0.5
+            dot.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
     var nsColor: NSColor {
         switch self {
         case .black: NSColor(srgbRed: 0.05, green: 0.05, blue: 0.1, alpha: 1)
@@ -105,6 +121,10 @@ final class ViewerModel {
     @ObservationIgnored private let thumbnailCache = NSCache<NSString, NSImage>()
     // Pages copied from other files keep a reference to their source document.
     @ObservationIgnored private var sourceDocuments: [PDFDocument] = []
+    // Last known value of every form field, used to detect edits PDFKit makes without telling the undo manager.
+    @ObservationIgnored private var formSnapshot: [ObjectIdentifier: FieldValue] = [:]
+    // Text field whose current typing session already has an undo entry.
+    @ObservationIgnored private var editingField: PDFAnnotation?
 
     var isLocked: Bool
     var pages: [PDFPage] = []
@@ -124,6 +144,8 @@ final class ViewerModel {
     var inkWidth: CGFloat = 2
     var pendingSignature: Signature?
     var isCreatingSignature = false
+    var hasForm = false
+    var showsFormBanner = true
     var searchText = "" {
         didSet { if searchText.isEmpty { clearSearch() } }
     }
@@ -157,6 +179,23 @@ final class ViewerModel {
                 self?.scale = view?.scaleFactor ?? 1
             },
         ]
+        // PDFKit edits text fields through a field editor inside the PDFView.
+        for name in [NSText.didChangeNotification, NSControl.textDidChangeNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self, weak view] note in
+                guard let view, let editor = note.object as? NSView, editor.isDescendant(of: view) else { return }
+                self?.formTextDidChange(in: editor)
+            })
+        }
+        for name in [NSText.didEndEditingNotification, NSControl.textDidEndEditingNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self, weak view] note in
+                guard let view, (note.object as? NSView)?.isDescendant(of: view) == true else { return }
+                self?.formTextDidEndEditing()
+            })
+        }
+        // Choice fields change through a pop-up menu.
+        observers.append(center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async { self?.checkFormChanges() }
+        })
         scale = view.scaleFactor
         syncCurrentPage()
     }
@@ -164,6 +203,7 @@ final class ViewerModel {
     private func reloadContent() {
         pages = (0..<pdf.pageCount).compactMap { pdf.page(at: $0) }
         outline = OutlineNode.build(pdf.outlineRoot)
+        refreshFormBaseline()
     }
 
     private func syncCurrentPage() {
@@ -178,11 +218,18 @@ final class ViewerModel {
         thumbnailRevision += 1
         if relayout { pdfView?.layoutDocumentView() }
         syncCurrentPage()
+        refreshFormBaseline()
     }
 
     private func registerUndo(_ name: String, _ handler: @escaping (ViewerModel) -> Void) {
-        undoManager?.registerUndo(withTarget: self, handler: handler)
-        undoManager?.setActionName(name)
+        guard let undoManager else { return }
+        // Automatic event grouping only runs in the default run loop mode; changes made while a
+        // menu is tracking would otherwise have no open group, so open one explicitly.
+        let needsGroup = undoManager.groupingLevel == 0
+        if needsGroup { undoManager.beginUndoGrouping() }
+        undoManager.registerUndo(withTarget: self, handler: handler)
+        undoManager.setActionName(name)
+        if needsGroup { undoManager.endUndoGrouping() }
     }
 
     func thumbnail(for page: PDFPage) -> NSImage {
@@ -516,6 +563,117 @@ final class ViewerModel {
         for (page, annotation) in items { page.removeAnnotation(annotation) }
         registerUndo(name) { $0.addAnnotations(items, name: name) }
         thumbnailRevision += 1
+    }
+
+    // MARK: - Forms
+
+    struct FieldValue: Equatable {
+        var text: String?
+        var state: Int
+    }
+
+    private var formFields: [PDFAnnotation] {
+        pages.flatMap { page in page.annotations.filter { $0.type == "Widget" } }
+    }
+
+    private func fieldValue(_ field: PDFAnnotation) -> FieldValue {
+        field.widgetFieldType == .button
+            ? FieldValue(text: nil, state: field.buttonWidgetState.rawValue)
+            : FieldValue(text: field.widgetStringValue, state: 0)
+    }
+
+    private func setFieldValue(_ field: PDFAnnotation, _ value: FieldValue) {
+        if field.widgetFieldType == .button {
+            field.buttonWidgetState = PDFWidgetCellState(rawValue: value.state) ?? .offState
+        } else {
+            field.widgetStringValue = value.text ?? ""
+        }
+    }
+
+    private func refreshFormBaseline() {
+        var snapshot: [ObjectIdentifier: FieldValue] = [:]
+        for field in formFields { snapshot[ObjectIdentifier(field)] = fieldValue(field) }
+        formSnapshot = snapshot
+        hasForm = !snapshot.isEmpty
+    }
+
+    /// Compares every field with the snapshot and records changed ones as one undo step.
+    func checkFormChanges(name: String = "填写表单") {
+        guard hasForm else { return }
+        var previous: [(PDFAnnotation, FieldValue)] = []
+        for field in formFields {
+            let id = ObjectIdentifier(field)
+            let value = fieldValue(field)
+            guard let old = formSnapshot[id] else { formSnapshot[id] = value; continue }
+            guard old != value else { continue }
+            formSnapshot[id] = value
+            if field !== editingField { previous.append((field, old)) }
+        }
+        guard !previous.isEmpty else { return }
+        registerUndo(name) { $0.restoreFields(previous, name: name) }
+        thumbnailRevision += 1
+    }
+
+    private func restoreFields(_ items: [(PDFAnnotation, FieldValue)], name: String) {
+        commitFormEditing()
+        let current = items.map { ($0.0, fieldValue($0.0)) }
+        for (field, value) in items {
+            setFieldValue(field, value)
+            formSnapshot[ObjectIdentifier(field)] = value
+        }
+        for page in Set(items.compactMap { $0.0.page }) { pdfView?.annotationsChanged(on: page) }
+        registerUndo(name) { $0.restoreFields(current, name: name) }
+        thumbnailRevision += 1
+    }
+
+    /// First keystroke of a typing session: register undo right away so the document becomes dirty.
+    private func formTextDidChange(in editor: NSView) {
+        guard editingField == nil,
+              let field = formField(under: editor),
+              let old = formSnapshot[ObjectIdentifier(field)] else { return }
+        editingField = field
+        registerUndo("填写表单") { $0.restoreFields([(field, old)], name: "填写表单") }
+    }
+
+    /// The text widget that PDFKit's editing view is placed over.
+    private func formField(under editor: NSView) -> PDFAnnotation? {
+        guard let view = pdfView else { return nil }
+        let center = editor.convert(NSPoint(x: editor.bounds.midX, y: editor.bounds.midY), to: view)
+        guard let page = view.page(for: center, nearest: false) else { return nil }
+        let point = view.convert(center, to: page)
+        return page.annotations.last {
+            $0.type == "Widget" && $0.widgetFieldType != .button && $0.bounds.contains(point)
+        }
+    }
+
+    private func formTextDidEndEditing() {
+        (pdfView as? XPDFView)?.resetFieldEditingUndo()
+        // PDFKit writes the field value after the notification, so check on the next turn.
+        DispatchQueue.main.async { [weak self] in
+            self?.checkFormChanges()
+            self?.editingField = nil
+        }
+    }
+
+    /// Ends any in-progress text entry so its value is written into the field.
+    func commitFormEditing() {
+        guard let view = pdfView, let window = view.window,
+              let responder = window.firstResponder as? NSView,
+              responder !== view, responder.isDescendant(of: view) else { return }
+        window.makeFirstResponder(view)
+    }
+
+    func resetForm() {
+        commitFormEditing()
+        for field in formFields {
+            if field.widgetFieldType == .button {
+                if field.widgetControlType != .pushButtonControl { field.buttonWidgetState = .offState }
+            } else {
+                field.widgetStringValue = ""
+            }
+        }
+        for page in pages { pdfView?.annotationsChanged(on: page) }
+        checkFormChanges(name: "清除表单")
     }
 
     // MARK: - Search

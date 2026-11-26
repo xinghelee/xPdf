@@ -69,6 +69,9 @@ struct ViewerCommands: Commands {
                 Divider()
                 Button("新建签名…") { model?.isCreatingSignature = true }
                     .keyboardShortcut("s", modifiers: [.command, .option])
+                Divider()
+                Button("清除表单内容") { model?.resetForm() }
+                    .disabled(model?.hasForm != true)
             }
             .disabled(model == nil)
         }
