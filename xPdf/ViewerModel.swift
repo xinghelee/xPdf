@@ -634,6 +634,20 @@ final class ViewerModel {
         }
         annotation.userName = NSFullUserName()
         addAnnotations([(page, annotation)], name: "添加\(kind.title)")
+        if kind == .whiteout { warnWhiteoutIsVisualOnly() }
+    }
+
+    /// A white box only hides content on screen and in print; the text and images underneath stay
+    /// in the file. Say so the first time, so it is not mistaken for redaction.
+    private func warnWhiteoutIsVisualOnly() {
+        let key = "whiteout.warningShown"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        let alert = NSAlert()
+        alert.messageText = "白色遮盖只会盖住显示的内容"
+        alert.informativeText = "被盖住的文字和图片仍然保存在文件里，可以被搜索、拷贝，删除遮盖后也会重新显示。请不要用它来隐藏身份证号、账号等敏感信息。"
+        alert.addButton(withTitle: "知道了")
+        alert.runModal()
     }
 
     func insertImageFromFile() {

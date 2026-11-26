@@ -135,7 +135,7 @@ struct DocumentToolbar: ToolbarContent {
             } label: {
                 Label("形状", systemImage: model.shapeKind.symbol)
             }
-            .help("选择形状：矩形、椭圆、直线、箭头、白色遮盖（按住 Shift 画正方形、圆或 45° 线）")
+            .help("选择形状：矩形、椭圆、直线、箭头、白色遮盖（按住 Shift 画正方形、圆或 45° 线）。白色遮盖只盖住显示，不会删除下面的内容")
         }
 
         ToolbarItem {
