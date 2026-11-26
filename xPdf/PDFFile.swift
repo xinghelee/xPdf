@@ -6,11 +6,14 @@ final class PDFFile: ReferenceFileDocument {
     static let readableContentTypes: [UTType] = [.pdf]
 
     let pdf: PDFDocument
+    /// The file as it was read, for a never-displayed copy of the pages (see ViewerModel.pristinePages).
+    let originalData: Data?
     /// Called before saving so in-progress edits (e.g. a form field being typed in) are committed.
     var commitPendingEdits: (() -> Void)?
 
     init() {
         pdf = PDFDocument()
+        originalData = nil
     }
 
     init(configuration: ReadConfiguration) throws {
@@ -19,6 +22,7 @@ final class PDFFile: ReferenceFileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
         pdf = doc
+        originalData = data
     }
 
     func snapshot(contentType: UTType) throws -> Data {

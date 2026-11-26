@@ -48,6 +48,9 @@ struct ViewerCommands: Commands {
                 Button("插入空白页") { model?.insertBlankPage() }
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                 Divider()
+                Button("识别文字（OCR）…") { model?.isShowingOCR = true }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
+                Divider()
                 Button("将所选页面导出为 PDF…") { model.map { $0.exportPDF($0.targetPages) } }
                 Button("将所选页面导出为 PNG…") { model.map { $0.exportImages($0.targetPages) } }
                 Divider()

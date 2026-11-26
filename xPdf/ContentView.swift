@@ -8,7 +8,7 @@ struct ContentView: View {
 
     init(document: PDFFile) {
         self.document = document
-        _model = State(initialValue: ViewerModel(pdf: document.pdf))
+        _model = State(initialValue: ViewerModel(pdf: document.pdf, originalData: document.originalData))
     }
 
     var body: some View {
@@ -29,6 +29,8 @@ struct ContentView: View {
                             PlacementBanner(model: model)
                         } else if model.hasForm && model.showsFormBanner {
                             FormBanner(model: model)
+                        } else if model.looksScanned && model.showsScanBanner {
+                            ScanBanner(model: model)
                         }
                     }
                     .dropDestination(for: URL.self) { urls, _ in
@@ -45,11 +47,12 @@ struct ContentView: View {
         .focusedSceneValue(\.viewer, model)
         .onAppear {
             model.undoManager = undoManager
-            document.commitPendingEdits = { [weak model] in model?.commitFormEditing() }
+            document.commitPendingEdits = { [model] in model.commitFormEditing() }
         }
         .onChange(of: undoManager) { _, manager in model.undoManager = manager }
         .sheet(isPresented: $model.isEditingNote) { NoteSheet(model: model) }
         .sheet(isPresented: $model.isCreatingSignature) { SignatureSheet(model: model) }
+        .sheet(isPresented: $model.isShowingOCR) { OCRSheet(model: model) }
         .alert("出错了", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }

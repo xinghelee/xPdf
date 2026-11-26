@@ -121,6 +121,12 @@ final class ViewerModel {
     @ObservationIgnored private let thumbnailCache = NSCache<NSString, NSImage>()
     // Pages copied from other files keep a reference to their source document.
     @ObservationIgnored private var sourceDocuments: [PDFDocument] = []
+    // PDFView runs its own OCR on displayed scan pages and writes the result straight into the page
+    // content, so a page's real content can only be read from a copy that is never displayed.
+    // Maps each page in `pdf` to such a copy: the same page of a second, hidden PDFDocument opened
+    // from the original file, or the source page a copy was inserted from.
+    @ObservationIgnored private let pristineDocument: PDFDocument?
+    @ObservationIgnored private var pristinePages: [ObjectIdentifier: PDFPage] = [:]
     // Last known value of every form field, used to detect edits PDFKit makes without telling the undo manager.
     @ObservationIgnored private var formSnapshot: [ObjectIdentifier: FieldValue] = [:]
     // Text field whose current typing session already has an undo entry.
@@ -146,6 +152,10 @@ final class ViewerModel {
     var isCreatingSignature = false
     var hasForm = false
     var showsFormBanner = true
+    var isShowingOCR = false
+    /// No page among the first few has a text layer: probably a scan.
+    var looksScanned = false
+    var showsScanBanner = true
     var searchText = "" {
         didSet { if searchText.isEmpty { clearSearch() } }
     }
@@ -154,8 +164,9 @@ final class ViewerModel {
     var errorMessage: String?
     private(set) var thumbnailRevision = 0
 
-    init(pdf: PDFDocument) {
+    init(pdf: PDFDocument, originalData: Data? = nil) {
         self.pdf = pdf
+        pristineDocument = originalData.flatMap { PDFDocument(data: $0) }
         isLocked = pdf.isLocked
         thumbnailCache.countLimit = 400
         if !isLocked { reloadContent() }
@@ -202,8 +213,23 @@ final class ViewerModel {
 
     private func reloadContent() {
         pages = (0..<pdf.pageCount).compactMap { pdf.page(at: $0) }
+        if let pristine = pristineDocument, pristine.pageCount == pages.count {
+            for (index, page) in pages.enumerated() {
+                if let original = pristine.page(at: index) { pristinePages[ObjectIdentifier(page)] = original }
+            }
+        }
         outline = OutlineNode.build(pdf.outlineRoot)
         refreshFormBaseline()
+        looksScanned = !pages.isEmpty && !pages.prefix(5).contains(where: hasText)
+    }
+
+    /// The never-displayed counterpart of `page`, or the page itself if there is none.
+    func pristine(_ page: PDFPage) -> PDFPage {
+        pristinePages[ObjectIdentifier(page)] ?? page
+    }
+
+    func hasText(_ page: PDFPage) -> Bool {
+        OCREngine.hasTextContent(pristine(page))
     }
 
     private func syncCurrentPage() {
@@ -244,6 +270,7 @@ final class ViewerModel {
 
     func unlock(password: String) -> Bool {
         guard pdf.unlock(withPassword: password) else { return false }
+        _ = pristineDocument?.unlock(withPassword: password)
         isLocked = false
         reloadContent()
         return true
@@ -360,7 +387,9 @@ final class ViewerModel {
                 if doc.isLocked { skipped.append(url.lastPathComponent); continue }
                 sourceDocuments.append(doc)
                 for i in 0..<doc.pageCount {
-                    if let page = doc.page(at: i)?.copy() as? PDFPage { newPages.append(page) }
+                    guard let source = doc.page(at: i), let page = source.copy() as? PDFPage else { continue }
+                    pristinePages[ObjectIdentifier(page)] = source
+                    newPages.append(page)
                 }
             } else if let image = NSImage(contentsOf: url), let page = PDFPage(image: image) {
                 newPages.append(page)
@@ -676,6 +705,79 @@ final class ViewerModel {
         checkFormChanges(name: "清除表单")
     }
 
+    // MARK: - OCR
+
+    struct OCRResult {
+        var recognizedPages = 0
+        var skippedPages = 0
+        var lineCount = 0
+        var text = ""
+        var cancelled = false
+    }
+
+    /// Recognizes text on `targets` and replaces them with copies that carry an invisible text layer.
+    /// The whole run is one undo step. Cancelling keeps the pages finished so far.
+    @MainActor
+    func recognizeText(in targets: [PDFPage], language: OCRLanguage, skipPagesWithText: Bool,
+                       progress: @escaping (Int, Int) -> Void) async -> OCRResult {
+        let todo = skipPagesWithText ? targets.filter { !hasText($0) } : targets
+        var result = OCRResult(skippedPages: targets.count - todo.count)
+        var replacements: [(PDFPage, PDFPage)] = []
+        var texts: [String] = []
+
+        for (index, page) in todo.enumerated() {
+            progress(index, todo.count)
+            if Task.isCancelled { result.cancelled = true; break }
+            let content = pristine(page)
+            guard let image = OCREngine.renderImage(of: content, rotation: page.rotation) else { continue }
+            let codes = language.codes
+            let lines = (try? await Task.detached(priority: .userInitiated) {
+                try OCREngine.recognize(image, languages: codes)
+            }.value) ?? []
+            if Task.isCancelled { result.cancelled = true; break }
+            guard !lines.isEmpty,
+                  let (document, newPage) = OCREngine.makeSearchablePage(from: content, rotation: page.rotation, lines: lines)
+            else { continue }
+            sourceDocuments.append(document)
+            // Re-running OCR on this page should start from the original content again, not stack layers.
+            pristinePages[ObjectIdentifier(newPage)] = content
+            replacements.append((page, newPage))
+            result.lineCount += lines.count
+            texts.append(lines.map(\.text).joined(separator: "\n"))
+        }
+        progress(todo.count, todo.count)
+
+        replacePages(replacements, name: "文字识别")
+        result.recognizedPages = replacements.count
+        result.text = texts.joined(separator: "\n\n")
+        if !replacements.isEmpty { looksScanned = false }
+        return result
+    }
+
+    /// Swaps pages in place, moving annotations (including form fields) onto the replacement.
+    func replacePages(_ pairs: [(PDFPage, PDFPage)], name: String) {
+        guard !pairs.isEmpty else { return }
+        let index = currentPageIndex
+        for (old, new) in pairs {
+            let position = pdf.index(for: old)
+            guard position != NSNotFound else { continue }
+            for annotation in old.annotations {
+                old.removeAnnotation(annotation)
+                new.addAnnotation(annotation)
+            }
+            pdf.removePage(at: position)
+            pdf.insert(new, at: position)
+        }
+        let mapping = Dictionary(uniqueKeysWithValues: pairs.map { (ObjectIdentifier($0.0), $0.1) })
+        selectedPages = Set(selectedPages.map { mapping[ObjectIdentifier($0)] ?? $0 })
+        // Old selections point at the replaced pages.
+        searchText = ""
+        clearSearch()
+        registerUndo(name) { $0.replacePages(pairs.map { ($0.1, $0.0) }, name: name) }
+        pagesDidChange()
+        goToPage(index)
+    }
+
     // MARK: - Search
 
     func performSearch() {
@@ -690,7 +792,7 @@ final class ViewerModel {
             let text = (context.string ?? "")
                 .replacingOccurrences(of: "\n", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return SearchHit(selection: selection, pageLabel: page?.label ?? "\(index + 1)", context: text)
+            return SearchHit(selection: selection, pageLabel: "\(index + 1)", context: text)
         }
         for selection in results { selection.color = .systemYellow }
         pdfView?.highlightedSelections = results

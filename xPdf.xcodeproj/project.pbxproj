@@ -13,8 +13,10 @@
 		3E7A63EA96666ED7B3AD20C4 /* PDFKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88360097194F2464ECB35FB1 /* PDFKitView.swift */; };
 		44770D7A66BE28CA2513A136 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DEE8A7B8281E1306E62275 /* SidebarView.swift */; };
 		44E245E666853043B292E25B /* Signature.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB02EDDAD12D6BF88B5E41A9 /* Signature.swift */; };
+		68DBE55A134CE761098D0FFA /* OCRSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E3866BB298CF1B2D4B272E /* OCRSheet.swift */; };
 		77AC36ACEB5EDD4FBEF991D6 /* PDFFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472FC0DA89CDBDCEB2665A9A /* PDFFile.swift */; };
 		8BCBB6C9F73116E3458041B6 /* XPdfApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C3490F1FDE54581022305C /* XPdfApp.swift */; };
+		A7BE44AEA916D70C022D2656 /* OCR.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F40772B9F6EC8F80853418 /* OCR.swift */; };
 		B8E0B3784EF9E7DB8437CAE6 /* ViewerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44CE7223B87AB52A414514A2 /* ViewerModel.swift */; };
 /* End PBXBuildFile section */
 
@@ -29,7 +31,9 @@
 		88360097194F2464ECB35FB1 /* PDFKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFKitView.swift; sourceTree = "<group>"; };
 		9CDF59AE0394A786B2E04916 /* xPdf.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = xPdf.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0DEE8A7B8281E1306E62275 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		C1E3866BB298CF1B2D4B272E /* OCRSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRSheet.swift; sourceTree = "<group>"; };
 		D9F03CAADAC2F280F1018B27 /* Commands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands.swift; sourceTree = "<group>"; };
+		E2F40772B9F6EC8F80853418 /* OCR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCR.swift; sourceTree = "<group>"; };
 		EB02EDDAD12D6BF88B5E41A9 /* Signature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Signature.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -41,6 +45,8 @@
 				D9F03CAADAC2F280F1018B27 /* Commands.swift */,
 				44A77293544F7C79D10BA90D /* ContentView.swift */,
 				537DDECD02857EA968617C6F /* Info.plist */,
+				E2F40772B9F6EC8F80853418 /* OCR.swift */,
+				C1E3866BB298CF1B2D4B272E /* OCRSheet.swift */,
 				472FC0DA89CDBDCEB2665A9A /* PDFFile.swift */,
 				88360097194F2464ECB35FB1 /* PDFKitView.swift */,
 				A0DEE8A7B8281E1306E62275 /* SidebarView.swift */,
@@ -140,6 +146,8 @@
 			files = (
 				123E14E47A44C856B0B9E16F /* Commands.swift in Sources */,
 				0D2A98820F819624306EA319 /* ContentView.swift in Sources */,
+				A7BE44AEA916D70C022D2656 /* OCR.swift in Sources */,
+				68DBE55A134CE761098D0FFA /* OCRSheet.swift in Sources */,
 				77AC36ACEB5EDD4FBEF991D6 /* PDFFile.swift in Sources */,
 				3E7A63EA96666ED7B3AD20C4 /* PDFKitView.swift in Sources */,
 				44770D7A66BE28CA2513A136 /* SidebarView.swift in Sources */,

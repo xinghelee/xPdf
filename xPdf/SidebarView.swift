@@ -44,6 +44,8 @@ private struct ThumbnailSidebar: View {
                 Button("在后面插入文件…") { model.insertFromFiles() }
                 Button("在后面插入空白页") { model.insertBlankPage() }
                 Divider()
+                Button("识别文字（OCR）…") { model.isShowingOCR = true }
+                Divider()
                 Button("导出为 PDF…") { model.exportPDF(targets) }
                 Button("导出为 PNG 图片…") { model.exportImages(targets) }
                 Divider()
@@ -73,7 +75,8 @@ private struct PageThumbnail: View {
                 .scaledToFit()
                 .frame(maxWidth: 130, maxHeight: 170)
                 .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
-            Text(page.label ?? "\(index + 1)")
+            // Pages copied from other documents keep that document's labels, so number by position.
+            Text("\(index + 1)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
