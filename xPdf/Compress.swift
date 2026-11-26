@@ -102,6 +102,8 @@ enum PDFCompressor {
             progress(0.3 + 0.6 * Double(index + 1) / Double(original.pageCount))
         }
 
+        let filteredIndices = Set(chosen.indices.filter { chosen[$0] !== original.page(at: $0) })
+
         // Assemble in the original document so its outline and metadata are kept. A compressed page
         // takes over the original page's annotations: the filtered copies' links point into the
         // temporary filtered document.
@@ -116,7 +118,16 @@ enum PDFCompressor {
             original.insert(page, at: index)
         }
 
-        guard let data = original.dataRepresentation() else { throw CompressionError.filterFailed }
+        guard var data = original.dataRepresentation() else { throw CompressionError.filterFailed }
+        // Replacing pages makes PDFKit redraw every page on save, which turns Type 3 text into
+        // outlines; put back each page's own content (see PDFGraft).
+        if compressed > 0 {
+            let originalFile = SourceFile(source), filteredFile = SourceFile(filteredData)
+            let sources = chosen.indices.map {
+                PageSource(file: filteredIndices.contains($0) ? filteredFile : originalFile, index: $0)
+            }
+            if let restored = PDFGraft.restoreContents(of: data, sources: sources) { data = restored }
+        }
         progress(1)
         return CompressionResult(
             data: data, originalSize: source.count,

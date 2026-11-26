@@ -19,6 +19,7 @@
 		4D5BEE432EE36F3CB40B48D1 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70BD8F72AF751B6806AA30E5 /* AIService.swift */; };
 		5419B386353D51D6796A4684 /* CompressSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D112C5EB3F9EE1167622A4 /* CompressSheet.swift */; };
 		68DBE55A134CE761098D0FFA /* OCRSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E3866BB298CF1B2D4B272E /* OCRSheet.swift */; };
+		730E71FF11466B621A080996 /* PDFGraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D8623BC59CD939F5239069 /* PDFGraft.swift */; };
 		77AC36ACEB5EDD4FBEF991D6 /* PDFFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472FC0DA89CDBDCEB2665A9A /* PDFFile.swift */; };
 		8BCBB6C9F73116E3458041B6 /* XPdfApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C3490F1FDE54581022305C /* XPdfApp.swift */; };
 		967F6746112E19C235A51D31 /* AIChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4110FA85B0B4FCD09DBC6A5E /* AIChat.swift */; };
@@ -30,6 +31,7 @@
 /* Begin PBXFileReference section */
 		0ED7F2F027D6505A45CF5350 /* Welcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Welcome.swift; sourceTree = "<group>"; };
 		12CDE59147271C8D55B6F588 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		15D8623BC59CD939F5239069 /* PDFGraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFGraft.swift; sourceTree = "<group>"; };
 		1CB48599451A82C0ACEA1663 /* xPdf.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = xPdf.entitlements; sourceTree = "<group>"; };
 		4110FA85B0B4FCD09DBC6A5E /* AIChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChat.swift; sourceTree = "<group>"; };
 		44A77293544F7C79D10BA90D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -68,6 +70,7 @@
 				C1E3866BB298CF1B2D4B272E /* OCRSheet.swift */,
 				DE4E2356220C344A249F0F9F /* PageReferences.swift */,
 				472FC0DA89CDBDCEB2665A9A /* PDFFile.swift */,
+				15D8623BC59CD939F5239069 /* PDFGraft.swift */,
 				88360097194F2464ECB35FB1 /* PDFKitView.swift */,
 				A0DEE8A7B8281E1306E62275 /* SidebarView.swift */,
 				EB02EDDAD12D6BF88B5E41A9 /* Signature.swift */,
@@ -175,6 +178,7 @@
 				A7BE44AEA916D70C022D2656 /* OCR.swift in Sources */,
 				68DBE55A134CE761098D0FFA /* OCRSheet.swift in Sources */,
 				77AC36ACEB5EDD4FBEF991D6 /* PDFFile.swift in Sources */,
+				730E71FF11466B621A080996 /* PDFGraft.swift in Sources */,
 				3E7A63EA96666ED7B3AD20C4 /* PDFKitView.swift in Sources */,
 				F83C0E3D83CE6F2764170EA2 /* PageReferences.swift in Sources */,
 				44770D7A66BE28CA2513A136 /* SidebarView.swift in Sources */,

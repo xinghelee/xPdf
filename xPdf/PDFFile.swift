@@ -8,8 +8,10 @@ final class PDFFile: ReferenceFileDocument {
     let pdf: PDFDocument
     /// The file as it was read, for a never-displayed copy of the pages (see ViewerModel.pristinePages).
     let originalData: Data?
-    /// Called before saving so in-progress edits (e.g. a form field being typed in) are committed.
-    var commitPendingEdits: (() -> Void)?
+    /// Produces the file contents: commits in-progress edits (e.g. a form field being typed in) and
+    /// works around PDFKit's limits when saving (see ViewerModel.currentDocumentData).
+    /// The argument says whether pending UI edits may be committed (main thread only).
+    var serialize: ((Bool) -> Data?)?
 
     init() {
         pdf = PDFDocument()
@@ -26,12 +28,14 @@ final class PDFFile: ReferenceFileDocument {
     }
 
     func snapshot(contentType: UTType) throws -> Data {
-        if Thread.isMainThread { commitPendingEdits?() }
-        guard let data = pdf.dataRepresentation() else {
-            throw CocoaError(.fileWriteUnknown)
+        // SwiftUI may ask for the snapshot on a background thread while the main thread waits for it,
+        // so the model cannot be asked to do anything on the main thread here. Committing an
+        // in-progress form edit needs the main thread and is only done when called there.
+        let data = serialize?(Thread.isMainThread) ?? pdf.dataRepresentation().map {
+            ImageStamp.embedAppearances(in: $0, stamps: ImageStamp.pendingStamps(in: [pdf]))
         }
-        // Inserted images get their appearance in an incremental update (see ImageStampAnnotation).
-        return ImageStamp.embedAppearances(in: data, stamps: ImageStamp.pendingStamps(in: [pdf]))
+        guard let data else { throw CocoaError(.fileWriteUnknown) }
+        return data
     }
 
     func fileWrapper(snapshot: Data, configuration: WriteConfiguration) throws -> FileWrapper {

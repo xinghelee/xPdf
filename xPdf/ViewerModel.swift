@@ -154,6 +154,11 @@ final class ViewerModel {
     // from the original file, or the source page a copy was inserted from.
     @ObservationIgnored private let pristineDocument: PDFDocument?
     @ObservationIgnored private var pristinePages: [ObjectIdentifier: PDFPage] = [:]
+    // The bytes each page's content came from, for restoring it after PDFKit redraws pages on save
+    // (see PDFGraft). Set once pages have been inserted, removed or reordered.
+    @ObservationIgnored private var pageSources: [ObjectIdentifier: PageSource] = [:]
+    @ObservationIgnored private var structureChanged = false
+    @ObservationIgnored private let originalData: Data?
     // Last known value of every form field, used to detect edits PDFKit makes without telling the undo manager.
     @ObservationIgnored private var formSnapshot: [ObjectIdentifier: FieldValue] = [:]
     // Text field whose current typing session already has an undo entry.
@@ -203,6 +208,7 @@ final class ViewerModel {
     init(pdf: PDFDocument, originalData: Data? = nil) {
         self.pdf = pdf
         pristineDocument = originalData.flatMap { PDFDocument(data: $0) }
+        self.originalData = originalData
         isLocked = pdf.isLocked
         thumbnailCache.countLimit = 400
         if !isLocked { reloadContent() }
@@ -255,6 +261,12 @@ final class ViewerModel {
         if let pristine = pristineDocument, pristine.pageCount == pages.count {
             for (index, page) in pages.enumerated() {
                 if let original = pristine.page(at: index) { pristinePages[ObjectIdentifier(page)] = original }
+            }
+        }
+        if let originalData, PDFDocument(data: originalData)?.pageCount == pages.count {
+            let file = SourceFile(originalData)
+            for (index, page) in pages.enumerated() {
+                pageSources[ObjectIdentifier(page)] = PageSource(file: file, index: index)
             }
         }
         outline = OutlineNode.build(pdf.outlineRoot)
@@ -380,6 +392,7 @@ final class ViewerModel {
             .filter { $0.0 != NSNotFound }
             .sorted { $0.0 < $1.0 }
         guard !items.isEmpty else { return }
+        structureChanged = true
         for (index, _) in items.reversed() { pdf.removePage(at: index) }
         selectedPages.subtract(targets)
         registerUndo(name) { $0.insert(items, name: name) }
@@ -389,6 +402,7 @@ final class ViewerModel {
     /// Inserts pages at the given indices (must be ascending).
     func insert(_ items: [(Int, PDFPage)], name: String = "插入页面") {
         guard !items.isEmpty else { return }
+        structureChanged = true
         for (index, page) in items { pdf.insert(page, at: min(index, pdf.pageCount)) }
         registerUndo(name) { $0.remove(items.map(\.1), name: name) }
         pagesDidChange()
@@ -407,6 +421,7 @@ final class ViewerModel {
         for (target, page) in order.enumerated() {
             let current = pdf.index(for: page)
             guard current != NSNotFound, current != target else { continue }
+            structureChanged = true
             pdf.removePage(at: current)
             pdf.insert(page, at: target)
         }
@@ -428,12 +443,14 @@ final class ViewerModel {
         var newPages: [PDFPage] = []
         var skipped: [String] = []
         for url in urls {
-            if let doc = PDFDocument(url: url) {
+            if let data = try? Data(contentsOf: url), let doc = PDFDocument(data: data) {
                 if doc.isLocked { skipped.append(url.lastPathComponent); continue }
                 sourceDocuments.append(doc)
+                let file = SourceFile(data)
                 for i in 0..<doc.pageCount {
                     guard let source = doc.page(at: i), let page = source.copy() as? PDFPage else { continue }
                     pristinePages[ObjectIdentifier(page)] = source
+                    pageSources[ObjectIdentifier(page)] = PageSource(file: file, index: i)
                     newPages.append(page)
                 }
             } else if let image = NSImage(contentsOf: url), let page = PDFPage(image: image) {
@@ -465,10 +482,10 @@ final class ViewerModel {
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = "导出的页面.pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        // A new document built from copies is written by redrawing its pages; restore their content.
         // Copied pages keep the stamps' /NM, so inserted images can be matched to the originals.
-        guard let data = output.dataRepresentation().map({
-            ImageStamp.embedAppearances(in: $0, stamps: ImageStamp.pendingStamps(in: [pdf]))
-        }), (try? data.write(to: url, options: .atomic)) != nil else {
+        guard let data = serialize(output, sources: targets.map { pageSources[ObjectIdentifier($0)] }, structureChanged: true),
+              (try? data.write(to: url, options: .atomic)) != nil else {
             errorMessage = "导出失败。"
             return
         }
@@ -885,11 +902,22 @@ final class ViewerModel {
     // MARK: - Compression
 
     /// The document as it would be saved now, including unsaved edits.
-    func currentDocumentData() -> Data? {
-        commitFormEditing()
-        return pdf.dataRepresentation().map {
-            ImageStamp.embedAppearances(in: $0, stamps: ImageStamp.pendingStamps(in: [pdf]))
+    /// The document as it should be saved. May run off the main thread (see PDFFile.snapshot), in
+    /// which case `commitEdits` is false.
+    func currentDocumentData(commitEdits: Bool = true) -> Data? {
+        if commitEdits { commitFormEditing() }
+        return serialize(pdf, sources: (0..<pdf.pageCount).map { pdf.page(at: $0).flatMap { pageSources[ObjectIdentifier($0)] } },
+                         structureChanged: structureChanged)
+    }
+
+    /// Writes `document`, undoing PDFKit's page redrawing if its pages were rearranged and giving
+    /// inserted images their appearance.
+    private func serialize(_ document: PDFDocument, sources: [PageSource?], structureChanged: Bool) -> Data? {
+        guard var data = document.dataRepresentation() else { return nil }
+        if structureChanged, let restored = PDFGraft.restoreContents(of: data, sources: sources) {
+            data = restored
         }
+        return ImageStamp.embedAppearances(in: data, stamps: ImageStamp.pendingStamps(in: [pdf, document]))
     }
 
     // MARK: - OCR
@@ -934,6 +962,9 @@ final class ViewerModel {
                   let (document, newPage) = OCREngine.makeSearchablePage(from: content, rotation: page.rotation, lines: lines)
             else { continue }
             sourceDocuments.append(document)
+            if let data = document.dataRepresentation() {
+                pageSources[ObjectIdentifier(newPage)] = PageSource(file: SourceFile(data), index: 0)
+            }
             // Re-running OCR on this page should start from the original content again, not stack layers.
             pristinePages[ObjectIdentifier(newPage)] = content
             replacements.append((page, newPage))
@@ -963,6 +994,7 @@ final class ViewerModel {
         for (old, new) in pairs {
             let position = pdf.index(for: old)
             guard position != NSNotFound else { continue }
+            structureChanged = true
             for annotation in old.annotations {
                 old.removeAnnotation(annotation)
                 new.addAnnotation(annotation)

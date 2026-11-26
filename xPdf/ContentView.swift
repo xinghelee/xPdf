@@ -55,7 +55,7 @@ struct ContentView: View {
         .focusedSceneValue(\.viewer, model)
         .onAppear {
             model.undoManager = undoManager
-            document.commitPendingEdits = { [model] in model.commitFormEditing() }
+            document.serialize = { [model] onMain in model.currentDocumentData(commitEdits: onMain) }
         }
         .onChange(of: undoManager) { _, manager in model.undoManager = manager }
         .onChange(of: fileURL, initial: true) { _, url in
